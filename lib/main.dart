@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _defaultScheduleUrl =
-    'https://kb.chaoxing.com/res/pc/curriculum/schedule.html?curriculumUuid=d46b44d7-88d7-470a-9497-f376dc9ba11d&kd_fidenc=33640C2C01CA94D7&text=%E4%B8%8D%E5%90%AF%E7%94%A8%E5%88%86%E5%8D%95%E4%BD%8D';
+    'https://kb.chaoxing.com/res/pc/curriculum/schedule.html?curriculumUuid=d46b44d7-88d7-470a-9497-f376dc9ba11d&currentCampusId=';
 const _savedScheduleUrlKey = 'saved_schedule_url';
 
 void main() {
@@ -99,14 +99,16 @@ class ScheduleConfig {
   const ScheduleConfig({
     required this.url,
     required this.curriculumUuid,
-    required this.fidEnc,
-    required this.unitText,
+    this.currentCampusId,
+    this.fidEnc,
+    this.unitText,
   });
 
   final String url;
   final String curriculumUuid;
-  final String fidEnc;
-  final String unitText;
+  final String? currentCampusId;
+  final String? fidEnc;
+  final String? unitText;
 
   factory ScheduleConfig.fromUrl(String input) {
     final uri = Uri.tryParse(input.trim());
@@ -115,17 +117,19 @@ class ScheduleConfig {
     }
 
     final curriculumUuid = uri.queryParameters['curriculumUuid'] ?? '';
+    final currentCampusId = uri.queryParameters['currentCampusId'] ?? '';
     final fidEnc = uri.queryParameters['kd_fidenc'] ?? '';
-    final unitText = uri.queryParameters['text'] ?? '不启用分单位';
-    if (curriculumUuid.isEmpty || fidEnc.isEmpty) {
-      throw const FormatException('链接里缺少 curriculumUuid 或 kd_fidenc');
+    final unitText = uri.queryParameters['text'] ?? '';
+    if (curriculumUuid.isEmpty) {
+      throw const FormatException('链接里缺少 curriculumUuid');
     }
 
     return ScheduleConfig(
       url: input.trim(),
       curriculumUuid: curriculumUuid,
-      fidEnc: fidEnc,
-      unitText: unitText,
+      currentCampusId: currentCampusId.isEmpty ? null : currentCampusId,
+      fidEnc: fidEnc.isEmpty ? null : fidEnc,
+      unitText: unitText.isEmpty ? null : unitText,
     );
   }
 }
@@ -153,15 +157,25 @@ class ScheduleService {
     required ScheduleConfig config,
     int? week,
   }) async {
+    final queryParameters = <String, Object?>{
+      'curriculumUuid': config.curriculumUuid,
+      'curTime': DateTime.now().millisecondsSinceEpoch,
+      'week': ?week,
+    };
+    if (config.currentCampusId != null &&
+        config.currentCampusId!.isNotEmpty) {
+      queryParameters['currentCampusId'] = config.currentCampusId;
+    }
+    if (config.fidEnc != null && config.fidEnc!.isNotEmpty) {
+      queryParameters['kd_fidenc'] = config.fidEnc;
+    }
+    if (config.unitText != null && config.unitText!.isNotEmpty) {
+      queryParameters['text'] = config.unitText;
+    }
+
     final response = await _dio.get<dynamic>(
       '/curriculum/getOtherLessons',
-      queryParameters: {
-        'curriculumUuid': config.curriculumUuid,
-        'kd_fidenc': config.fidEnc,
-        'text': config.unitText,
-        'curTime': DateTime.now().millisecondsSinceEpoch,
-        'week': ?week,
-      },
+      queryParameters: queryParameters,
     );
 
     final body = switch (response.data) {
@@ -418,49 +432,10 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _changeScheduleUrl() async {
-    final controller = TextEditingController(text: _config.url);
     final newConfig = await showDialog<ScheduleConfig>(
       context: context,
-      builder: (context) {
-        String? errorText;
-        return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('切换课表'),
-            content: TextField(
-              controller: controller,
-              minLines: 4,
-              maxLines: 6,
-              decoration: InputDecoration(
-                labelText: '超星课表链接',
-                hintText: _defaultScheduleUrl,
-                errorText: errorText,
-                border: const OutlineInputBorder(),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  try {
-                    Navigator.pop(
-                      context,
-                      ScheduleConfig.fromUrl(controller.text),
-                    );
-                  } catch (error) {
-                    setDialogState(() => errorText = error.toString());
-                  }
-                },
-                child: const Text('保存并查看'),
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (context) => _ScheduleUrlDialog(initialUrl: _config.url),
     );
-    controller.dispose();
 
     if (newConfig == null) {
       return;
@@ -478,6 +453,7 @@ class _SchedulePageState extends State<SchedulePage> {
       _selectedWeek = 1;
       _showFocus = true;
     });
+    await Future<void>.delayed(Duration.zero);
     await _loadInitial();
   }
 
@@ -541,6 +517,68 @@ class _SchedulePageState extends State<SchedulePage> {
               ),
       ),
     );
+  }
+}
+
+class _ScheduleUrlDialog extends StatefulWidget {
+  const _ScheduleUrlDialog({required this.initialUrl});
+
+  final String initialUrl;
+
+  @override
+  State<_ScheduleUrlDialog> createState() => _ScheduleUrlDialogState();
+}
+
+class _ScheduleUrlDialogState extends State<_ScheduleUrlDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialUrl);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('切换课表'),
+      content: TextField(
+        controller: _controller,
+        minLines: 4,
+        maxLines: 6,
+        decoration: InputDecoration(
+          labelText: '超星课表链接',
+          hintText: _defaultScheduleUrl,
+          errorText: _errorText,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('保存并查看'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    try {
+      Navigator.pop(context, ScheduleConfig.fromUrl(_controller.text));
+    } catch (error) {
+      setState(() => _errorText = error.toString());
+    }
   }
 }
 
