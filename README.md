@@ -1,17 +1,27 @@
-# my_app
+# 超星课表
 
-A new Flutter project.
+基于学习通课程表构建的低网络要求且稳定的**移动端**课程表
 
-## Getting Started
+## 如何使用
 
-This project is a starting point for a Flutter application.
+### 1.获取课程表链接
 
-A few resources to get you started if this is your first Flutter project:
+**1.手机版**📱
+- 打开学习通
+- 点击应用中心
+- 寻找**学生课表**
+- 进入后
+   出现课程✅：出现课程表后，点击右上角展开选项，再点击转发，点击复制链接
+   没有课程❌：很遗憾，学校不支持
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+**2.电脑版**💻
+- 进入个人空间
+- 右上角展开，点击**切换单位/角色**
+- 确认后，主页会出现课程表
+- 点击课程表右上角转发，复制链接
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### 2.应用内导入
+- 打开课表app
+- 点击右上角第二个那个**输入链接**选项
+- 粘贴进去刚刚得到的链接
+- 如出现你的课程，恭喜成功
