@@ -4,9 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'exam_page.dart';
 
-const _defaultScheduleUrl =
-    'https://kb.chaoxing.com/res/pc/curriculum/schedule.html?curriculumUuid=d46b44d7-88d7-470a-9497-f376dc9ba11d&currentCampusId=';
+const _defaultScheduleUrl = '';
+const _scheduleUrlHint =
+    'https://kb.chaoxing.com/res/pc/curriculum/schedule.html?curriculumUuid=你的课表UUID&currentCampusId=';
 const _savedScheduleUrlKey = 'saved_schedule_url';
 
 void main() {
@@ -162,8 +164,7 @@ class ScheduleService {
       'curTime': DateTime.now().millisecondsSinceEpoch,
       'week': ?week,
     };
-    if (config.currentCampusId != null &&
-        config.currentCampusId!.isNotEmpty) {
+    if (config.currentCampusId != null && config.currentCampusId!.isNotEmpty) {
       queryParameters['currentCampusId'] = config.currentCampusId;
     }
     if (config.fidEnc != null && config.fidEnc!.isNotEmpty) {
@@ -330,8 +331,11 @@ class SchedulePage extends StatefulWidget {
 }
 
 class _SchedulePageState extends State<SchedulePage> {
+  bool _examSelected = false;
+  bool _examOpened = false;
+  final _examKey = GlobalKey<ExamPageState>();
   final _service = ScheduleService();
-  ScheduleConfig _config = ScheduleConfig.fromUrl(_defaultScheduleUrl);
+  ScheduleConfig? _config;
   ScheduleData? _schedule;
   CourseLesson? _nextLesson;
   int _selectedWeek = 1;
@@ -355,24 +359,39 @@ class _SchedulePageState extends State<SchedulePage> {
         await prefs.remove(_savedScheduleUrlKey);
       }
     }
+    if (_config == null) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = null;
+      });
+      return;
+    }
     await _loadInitial();
   }
 
   Future<void> _loadInitial() async {
+    final config = _config;
+    if (config == null) {
+      await _changeScheduleUrl();
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final first = await _service.fetchLessons(config: _config);
+      final first = await _service.fetchLessons(config: config);
       var data = first;
       var week = first.currentWeek;
       var next = _findNext(first.lessons);
 
       while (next == null && week < first.maxWeek) {
         week += 1;
-        data = await _service.fetchLessons(config: _config, week: week);
+        data = await _service.fetchLessons(config: config, week: week);
         next = _findNext(data.lessons);
       }
 
@@ -399,7 +418,11 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<void> _loadWeek(int week) async {
     final schedule = _schedule;
-    if (schedule == null || week < 1 || week > schedule.maxWeek) {
+    final config = _config;
+    if (schedule == null ||
+        config == null ||
+        week < 1 ||
+        week > schedule.maxWeek) {
       return;
     }
 
@@ -410,7 +433,7 @@ class _SchedulePageState extends State<SchedulePage> {
     });
 
     try {
-      final data = await _service.fetchLessons(config: _config, week: week);
+      final data = await _service.fetchLessons(config: config, week: week);
       if (!mounted) {
         return;
       }
@@ -432,9 +455,10 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _changeScheduleUrl() async {
+    final currentUrl = _config?.url ?? '';
     final newConfig = await showDialog<ScheduleConfig>(
       context: context,
-      builder: (context) => _ScheduleUrlDialog(initialUrl: _config.url),
+      builder: (context) => _ScheduleUrlDialog(initialUrl: currentUrl),
     );
 
     if (newConfig == null) {
@@ -475,24 +499,30 @@ class _SchedulePageState extends State<SchedulePage> {
     return Scaffold(
       backgroundColor: const Color(0xfff5f7fb),
       appBar: AppBar(
-        title: const Text('课程表'),
+        title: Row(children: [
+          _pageTab('课程表', false),
+          _pageTab('考试信息', true),
+        ]),
+        titleSpacing: 8,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         actions: [
-          IconButton(
+          if (!_examSelected) IconButton(
             tooltip: '切换课表',
             onPressed: _changeScheduleUrl,
             icon: const Icon(Icons.link),
           ),
           IconButton(
             tooltip: '刷新',
-            onPressed: _loadInitial,
+            onPressed: _examSelected ? () => _examKey.currentState?.refresh() : _loadInitial,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-      body: SafeArea(
-        child: _loading && schedule == null
+      body: IndexedStack(index: _examSelected ? 1 : 0, children: [SafeArea(
+        child: _config == null && schedule == null
+            ? _EmptyScheduleView(onAddUrl: _changeScheduleUrl)
+            : _loading && schedule == null
             ? const Center(child: CircularProgressIndicator())
             : _error != null
             ? _ErrorView(message: _error!, onRetry: _loadInitial)
@@ -515,9 +545,20 @@ class _SchedulePageState extends State<SchedulePage> {
                     ),
                 ],
               ),
-      ),
+      ), if (_examOpened) ExamPage(key: _examKey) else const SizedBox.shrink()]),
     );
   }
+
+  Widget _pageTab(String label, bool exam) => Flexible(
+    child: TextButton(
+      style: TextButton.styleFrom(
+        backgroundColor: _examSelected == exam ? const Color(0xffe8f0fe) : Colors.transparent,
+        foregroundColor: _examSelected == exam ? const Color(0xff2c7be5) : const Color(0xff5f6b7a),
+      ),
+      onPressed: () => setState(() { _examSelected = exam; _examOpened |= exam; }),
+      child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+    ),
+  );
 }
 
 class _ScheduleUrlDialog extends StatefulWidget {
@@ -555,7 +596,7 @@ class _ScheduleUrlDialogState extends State<_ScheduleUrlDialog> {
         maxLines: 6,
         decoration: InputDecoration(
           labelText: '超星课表链接',
-          hintText: _defaultScheduleUrl,
+          hintText: _scheduleUrlHint,
           errorText: _errorText,
           border: const OutlineInputBorder(),
         ),
@@ -565,10 +606,7 @@ class _ScheduleUrlDialogState extends State<_ScheduleUrlDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('保存并查看'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('保存并查看')),
       ],
     );
   }
@@ -579,6 +617,44 @@ class _ScheduleUrlDialogState extends State<_ScheduleUrlDialog> {
     } catch (error) {
       setState(() => _errorText = error.toString());
     }
+  }
+}
+
+class _EmptyScheduleView extends StatelessWidget {
+  const _EmptyScheduleView({required this.onAddUrl});
+
+  final VoidCallback onAddUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.link_off, size: 56, color: Color(0xff5f6b7a)),
+            const SizedBox(height: 14),
+            const Text(
+              '还没有课表链接',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '点击下方按钮输入超星课表链接，保存后会自动记住。',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xff5f6b7a)),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: onAddUrl,
+              icon: const Icon(Icons.add_link),
+              label: const Text('输入课表链接'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -847,8 +923,15 @@ class _ScheduleGrid extends StatelessWidget {
   }
 
   Color _colorForCourse(String courseName) {
-    final index = courseName.hashCode.abs() % _courseColors.length;
-    return _courseColors[index];
+    // 已分配过的课程直接返回，APP运行期内颜色固定不变
+    if (_courseColorCache.containsKey(courseName)) {
+      return _courseColorCache[courseName]!;
+    }
+    // 按顺序从色池取色，22门课以内绝对不会出现重复颜色
+    final color = _courseColors[_nextColorIndex % _courseColors.length];
+    _courseColorCache[courseName] = color;
+    _nextColorIndex++;
+    return color;
   }
 
   String _normalizeTimeRange(String rawRange) {
@@ -1316,4 +1399,19 @@ const _courseColors = [
   Color(0xff2d6a4f),
   Color(0xffc44536),
   Color(0xff3a0ca3),
+  // ===== 新增同风格、色差明显的补充色 =====
+  Color(0xff297373),
+  Color(0xff7209b7),
+  Color(0xffffb703),
+  Color(0xffd90429),
+  Color(0xff457b9d),
+  Color(0xff55a630),
+  Color(0xffb5179e),
+  Color(0xff023e8a),
+  Color(0xffe01e37),
+  Color(0xff38b000),
+  Color(0xff9c6644),
+  Color(0xff560bad),
 ];
+final Map<String, Color> _courseColorCache = {};
+int _nextColorIndex = 0;

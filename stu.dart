@@ -10,7 +10,6 @@ void test() async {
       throw Exception("An error occurred");
     });
     // await Future.delayed( Duration(seconds: 3));
-    print("good");
   } catch (e) {
     debugPrint("catch error: $e");
   }
