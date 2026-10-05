@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'exam_page.dart';
 
-const _defaultScheduleUrl = '';
 const _scheduleUrlHint =
     'https://kb.chaoxing.com/res/pc/curriculum/schedule.html?curriculumUuid=你的课表UUID&currentCampusId=';
 const _savedScheduleUrlKey = 'saved_schedule_url';
@@ -499,63 +498,76 @@ class _SchedulePageState extends State<SchedulePage> {
     return Scaffold(
       backgroundColor: const Color(0xfff5f7fb),
       appBar: AppBar(
-        title: Row(children: [
-          _pageTab('课程表', false),
-          _pageTab('考试信息', true),
-        ]),
+        title: Row(children: [_pageTab('课程表', false), _pageTab('考试信息', true)]),
         titleSpacing: 8,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         actions: [
-          if (!_examSelected) IconButton(
-            tooltip: '切换课表',
-            onPressed: _changeScheduleUrl,
-            icon: const Icon(Icons.link),
-          ),
+          if (!_examSelected)
+            IconButton(
+              tooltip: '切换课表',
+              onPressed: _changeScheduleUrl,
+              icon: const Icon(Icons.link),
+            ),
           IconButton(
             tooltip: '刷新',
-            onPressed: _examSelected ? () => _examKey.currentState?.refresh() : _loadInitial,
+            onPressed: _examSelected
+                ? () => _examKey.currentState?.refresh()
+                : _loadInitial,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-      body: IndexedStack(index: _examSelected ? 1 : 0, children: [SafeArea(
-        child: _config == null && schedule == null
-            ? _EmptyScheduleView(onAddUrl: _changeScheduleUrl)
-            : _loading && schedule == null
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? _ErrorView(message: _error!, onRetry: _loadInitial)
-            : Stack(
-                children: [
-                  _ScheduleBoard(
-                    schedule: schedule!,
-                    selectedWeek: _selectedWeek,
-                    loading: _loading,
-                    onPreviousWeek: () => _loadWeek(_selectedWeek - 1),
-                    onNextWeek: () => _loadWeek(_selectedWeek + 1),
-                    onShowFocus: _nextLesson == null
-                        ? null
-                        : () => setState(() => _showFocus = true),
+      body: IndexedStack(
+        index: _examSelected ? 1 : 0,
+        children: [
+          SafeArea(
+            child: _config == null && schedule == null
+                ? _EmptyScheduleView(onAddUrl: _changeScheduleUrl)
+                : _loading && schedule == null
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                ? _ErrorView(message: _error!, onRetry: _loadInitial)
+                : Stack(
+                    children: [
+                      _ScheduleBoard(
+                        schedule: schedule!,
+                        selectedWeek: _selectedWeek,
+                        loading: _loading,
+                        onPreviousWeek: () => _loadWeek(_selectedWeek - 1),
+                        onNextWeek: () => _loadWeek(_selectedWeek + 1),
+                        onShowFocus: _nextLesson == null
+                            ? null
+                            : () => setState(() => _showFocus = true),
+                      ),
+                      if (_showFocus && _nextLesson != null)
+                        _NextLessonOverlay(
+                          lesson: _nextLesson!,
+                          onClose: () => setState(() => _showFocus = false),
+                        ),
+                    ],
                   ),
-                  if (_showFocus && _nextLesson != null)
-                    _NextLessonOverlay(
-                      lesson: _nextLesson!,
-                      onClose: () => setState(() => _showFocus = false),
-                    ),
-                ],
-              ),
-      ), if (_examOpened) ExamPage(key: _examKey) else const SizedBox.shrink()]),
+          ),
+          if (_examOpened) ExamPage(key: _examKey) else const SizedBox.shrink(),
+        ],
+      ),
     );
   }
 
   Widget _pageTab(String label, bool exam) => Flexible(
     child: TextButton(
       style: TextButton.styleFrom(
-        backgroundColor: _examSelected == exam ? const Color(0xffe8f0fe) : Colors.transparent,
-        foregroundColor: _examSelected == exam ? const Color(0xff2c7be5) : const Color(0xff5f6b7a),
+        backgroundColor: _examSelected == exam
+            ? const Color(0xffe8f0fe)
+            : Colors.transparent,
+        foregroundColor: _examSelected == exam
+            ? const Color(0xff2c7be5)
+            : const Color(0xff5f6b7a),
       ),
-      onPressed: () => setState(() { _examSelected = exam; _examOpened |= exam; }),
+      onPressed: () => setState(() {
+        _examSelected = exam;
+        _examOpened |= exam;
+      }),
       child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
     ),
   );
